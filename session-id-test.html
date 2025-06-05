@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Session ID Test</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .output {
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            height: 300px;
+            overflow-y: auto;
+        }
+        .btn {
+            padding: 6px 12px;
+            background-color: #7c3aed;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+            margin-bottom: 10px;
+        }
+        input[type="text"] {
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-right: 5px;
+            width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Session ID Storage</h1>
+    
+    <div>
+        <label for="conversation-id">Conversation ID:</label>
+        <input type="text" id="conversation-id" placeholder="Enter conversation ID">
+    </div>
+    
+    <div style="margin-top: 10px;">
+        <label for="message">Message:</label>
+        <input type="text" id="message" value="Hello, tell me about yourself" style="width: 400px;">
+    </div>
+    
+    <div style="margin-top: 15px;">
+        <button class="btn" onclick="sendMessage()">Send Message</button>
+        <button class="btn" onclick="clearOutput()">Clear Output</button>
+    </div>
+    
+    <h3>Response:</h3>
+    <div id="output" class="output"></div>
+    
+    <script>
+        async function sendMessage() {
+            const output = document.getElementById('output');
+            const conversationId = document.getElementById('conversation-id').value.trim();
+            const message = document.getElementById('message').value.trim();
+            
+            if (!message) {
+                output.textContent += "Please enter a message\n";
+                return;
+            }
+            
+            output.textContent += `Sending message "${message}" ${conversationId ? `with conversation ID: ${conversationId}` : 'without conversation ID'}\n`;
+            
+            try {
+                const eventSource = new EventSource(`/api/chat?${Date.now()}`);
+                
+                // Send the POST request separately with the message
+                fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message,
+                        conversationId
+                    })
+                });
+                
+                let fullResponse = '';
+                
+                eventSource.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.choices && data.choices[0].message) {
+                            const content = data.choices[0].message.content;
+                            fullResponse += content;
+                            output.textContent += content;
+                            output.scrollTop = output.scrollHeight; // Auto-scroll to bottom
+                        } else if (event.data === '[DONE]') {
+                            output.textContent += '\n\n[Response complete]\n';
+                            eventSource.close();
+                        }
+                    } catch (e) {
+                        if (event.data === '[DONE]') {
+                            output.textContent += '\n\n[Response complete]\n';
+                            eventSource.close();
+                        } else {
+                            output.textContent += `\nError parsing event: ${e.message}\n`;
+                            console.error('Error parsing event:', e, event.data);
+                        }
+                    }
+                };
+                
+                eventSource.onerror = function(error) {
+                    output.textContent += `\nEventSource error: ${error.type}\n`;
+                    eventSource.close();
+                };
+                
+            } catch (error) {
+                output.textContent += `\nError sending message: ${error.message}\n`;
+            }
+        }
+        
+        function clearOutput() {
+            document.getElementById('output').textContent = '';
+        }
+    </script>
+</body>
+</html>
