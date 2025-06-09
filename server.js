@@ -11,6 +11,7 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 5101;
+export default app;
 
 // MongoDB Atlas connection
 const username = process.env.MONGODB_USERNAME;
@@ -23,7 +24,17 @@ let db;
 // Connect to MongoDB Atlas
 async function connectToMongoDB() {
   try {
-    const client = new MongoClient(uri);
+    // Add explicit TLS options to fix SSL connection issues
+    const client = new MongoClient(uri, {
+      ssl: true,
+      tls: true,
+      tlsAllowInvalidCertificates: false,
+      serverApi: {
+        version: '1',
+        strict: true,
+        deprecationErrors: true
+      }
+    });
     await client.connect();
     db = client.db(dbName);
     console.log(`Connected to MongoDB Atlas successfully - Database: ${dbName}`);
@@ -80,6 +91,12 @@ const authenticateToken = async (req, res, next) => {
   }
   
   try {
+    // Check if database is initialized
+    if (!db) {
+      console.error('Database connection not established yet');
+      return res.status(503).json({ error: 'Service unavailable: Database not connected' });
+    }
+    
     // Find user with this token
     const user = await db.collection('users').findOne({ token });
     
@@ -890,4 +907,6 @@ async function startServer() {
     }
 }
 
-startServer();
+if (process.env.NODE_ENV !== 'test') {
+  startServer();
+}

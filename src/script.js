@@ -13,10 +13,13 @@ function checkSession() {
     return true;
 }
 
-// Run session check immediately
-if (!checkSession()) {
-    // Stop further script execution if not authenticated
-    throw new Error('Not authenticated');
+// Run session check immediately, but only if not in test environment
+if (typeof process === 'undefined' || !process.env.JEST_WORKER_ID) {
+    // Not running in Jest environment, perform authentication check
+    if (!checkSession()) {
+        // Stop further script execution if not authenticated
+        throw new Error('Not authenticated');
+    }
 }
 
 // Global variables
