@@ -666,6 +666,25 @@ app.post('/api/chat', async (req, res) => {
 
         let buffer = '';
         let lastProcessedText = '';
+        let clientAborted = false;
+
+        // Abort controller for upstream requests (if supported by axios)
+        const abortController = new AbortController();
+        axiosConfig.signal = abortController.signal;
+
+        // Handle client disconnect
+        req.on('close', () => {
+            clientAborted = true;
+            console.log('Client disconnected during text generation. Aborting stream and upstream request.');
+            try {
+                response.data.destroy && response.data.destroy(); // Abort stream if possible
+            } catch (e) {
+                console.warn('Error aborting response stream:', e);
+            }
+            if (abortController) {
+                abortController.abort();
+            }
+        });
 
         // Pipe the response stream to the client
         response.data.on('data', (chunk) => {
@@ -765,40 +784,28 @@ app.post('/api/chat', async (req, res) => {
                                                     { conversation_id: conversationId },
                                                     { 
                                                         $set: { 
-                                                            dashscope_session_id: sessionId, 
-                                                            updated_at: new Date(),
-                                                            // Store preview and response consistently using snake_case
-                                                            preview: typeof message === 'object' ? JSON.stringify(message) : message,
-                                                            preview_response: typeof lastProcessedText === 'object' ? JSON.stringify(lastProcessedText) : lastProcessedText
-                                                        },
-                                                        // Add messages to the array
-                                                        $push: {
-                                                            messages: [
-                                                                {
-                                                                    role: 'user',
-                                                                    content: typeof message === 'object' ? JSON.stringify(message) : message,
-                                                                    timestamp: new Date()
-                                                                },
-                                                                {
-                                                                    role: 'assistant',
-                                                                    content: typeof lastProcessedText === 'object' ? JSON.stringify(lastProcessedText) : lastProcessedText,
-                                                                    timestamp: new Date()
-                                                                }
-                                                            ]
-                                                        }
+                                                        dashscope_session_id: sessionId, 
+                                                        updated_at: new Date(),
+                                                        messages: [
+                                                            {
+                                                                role: 'user',
+                                                                content: typeof message === 'object' ? JSON.stringify(message) : message,
+                                                                timestamp: new Date()
+                                                            },
+                                                            {
+                                                                role: 'assistant',
+                                                                content: typeof lastProcessedText === 'object' ? JSON.stringify(lastProcessedText) : lastProcessedText,
+                                                                timestamp: new Date()
+                                                            }
+                                                        ]
                                                     }
-                                                );
-                                                console.log('MongoDB update result:', {
-                                                    matchedCount: updateResult.matchedCount,
-                                                    modifiedCount: updateResult.modifiedCount,
-                                                    conversation_id: conversationId,
-                                                    session_id: sessionId
-                                                });
-                                            } catch (dbError) {
-                                                console.error('Error updating conversation with session ID:', dbError);
-                                            }
-                                        })();
-                                    }
+                                                }
+                                            );
+                                        } catch (dbError) {
+                                            console.error('Error updating conversation with session ID:', dbError);
+                                        }
+                                    })();
+                                }
 
                                     // Store the message in MongoDB
                                     
@@ -815,10 +822,60 @@ app.post('/api/chat', async (req, res) => {
               }
             });
             
-            response.data.on('end', () => {
-              res.write('data: [DONE]\n\n');
-              res.end();
-        });
+            response.data.on('end', async () => {
+    res.write('data: [DONE]\n\n');
+    res.end();
+
+    // After streaming is complete, store the user prompt and assistant reply in MongoDB
+    try {
+        if (conversationId && lastProcessedText) {
+            // Find the conversation, create if not exists
+            let conversation = await db.collection('conversations').findOne({ conversation_id: conversationId });
+            if (!conversation) {
+                const userId = req.headers['user-id'] || 'anonymous';
+                const newConversation = {
+                    conversation_id: conversationId,
+                    user_id: userId,
+                    title: 'Chat session',
+                    created_at: new Date(),
+                    updated_at: new Date(),
+                    messages: [],
+                    message: 'Chat session started',
+                    dashscope_session_id: null
+                };
+                await db.collection('conversations').insertOne(newConversation);
+            }
+            // Push the user and assistant messages as a pair
+            await db.collection('conversations').updateOne(
+                { conversation_id: conversationId },
+                {
+                    $push: {
+                        messages: {
+                            $each: [
+                                {
+                                    role: 'user',
+                                    content: typeof message === 'object' ? JSON.stringify(message) : message,
+                                    timestamp: new Date()
+                                },
+                                {
+                                    role: 'assistant',
+                                    content: typeof lastProcessedText === 'object' ? JSON.stringify(lastProcessedText) : lastProcessedText,
+                                    timestamp: new Date()
+                                }
+                            ]
+                        }
+                    },
+                    $set: {
+                        updated_at: new Date(),
+                        dashscope_session_id: existingSessionId || null
+                    }
+                }
+            );
+        }
+    } catch (dbError) {
+        console.error('Error saving messages after SSE end:', dbError);
+    }
+});
 
         response.data.on('error', (error) => {
             console.error('Stream Error:', error);
