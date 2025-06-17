@@ -753,6 +753,13 @@ app.post('/api/chat', async (req, res) => {
                                                     console.log(`Created new conversation with ID: ${conversationId}`);
                                                 }
                                                 
+                                                // Debug information about message and lastProcessedText
+                                                console.log('DEBUG - Before MongoDB update:');
+                                                console.log('  message type:', typeof message);
+                                                console.log('  message value:', message);
+                                                console.log('  lastProcessedText type:', typeof lastProcessedText);
+                                                console.log('  lastProcessedText value:', lastProcessedText);
+                                                
                                                 // Now update with session ID and message content - using snake_case field names consistently
                                                 const updateResult = await db.collection('conversations').updateOne(
                                                     { conversation_id: conversationId },
@@ -761,20 +768,20 @@ app.post('/api/chat', async (req, res) => {
                                                             dashscope_session_id: sessionId, 
                                                             updated_at: new Date(),
                                                             // Store preview and response consistently using snake_case
-                                                            preview: message,
-                                                            preview_response: lastProcessedText
+                                                            preview: typeof message === 'object' ? JSON.stringify(message) : message,
+                                                            preview_response: typeof lastProcessedText === 'object' ? JSON.stringify(lastProcessedText) : lastProcessedText
                                                         },
                                                         // Add messages to the array
                                                         $push: {
                                                             messages: [
                                                                 {
                                                                     role: 'user',
-                                                                    content: message,
+                                                                    content: typeof message === 'object' ? JSON.stringify(message) : message,
                                                                     timestamp: new Date()
                                                                 },
                                                                 {
                                                                     role: 'assistant',
-                                                                    content: lastProcessedText,
+                                                                    content: typeof lastProcessedText === 'object' ? JSON.stringify(lastProcessedText) : lastProcessedText,
                                                                     timestamp: new Date()
                                                                 }
                                                             ]
