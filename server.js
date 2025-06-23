@@ -118,6 +118,10 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
+// =====================
+// AUTH ENDPOINTS
+// =====================
+
 // Register new user
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -247,7 +251,10 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// User preferences API
+// =====================
+// USER PREFERENCES ENDPOINTS
+// =====================
+
 app.get('/api/user/preferences', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -310,7 +317,10 @@ app.put('/api/user/preferences', authenticateToken, async (req, res) => {
   }
 });
 
-// Conversations and messages APIs
+// =====================
+// CONVERSATION ENDPOINTS
+// =====================
+
 app.get('/api/conversations', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -329,30 +339,6 @@ app.get('/api/conversations', authenticateToken, async (req, res) => {
   }
 });
 
-// Get user preferences
-app.get('/api/user/preferences', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    
-    // Get user preferences from database
-    const preferences = await db.collection('user_preferences').findOne({ user_id: userId });
-    
-    // If no preferences exist yet, return default values
-    if (!preferences) {
-      return res.status(200).json({
-        theme: 'system',
-        last_active_conversation: null,
-        user_id: userId
-      });
-    }
-    
-    return res.status(200).json(preferences);
-    
-  } catch (error) {
-    console.error('Error fetching user preferences:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
 app.post('/api/conversations', authenticateToken, async (req, res) => {
   try {
@@ -421,7 +407,6 @@ app.get('/api/conversations/:conversationId/messages', authenticateToken, async 
   }
 });
 
-// Delete all conversations for a user
 app.delete('/api/conversations/clear', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -494,7 +479,10 @@ app.post('/api/conversations/:conversationId/messages', authenticateToken, async
   }
 });
 
-// User profile update API
+// =====================
+// USER PROFILE ENDPOINTS
+// =====================
+
 app.put('/api/user/profile', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -559,7 +547,10 @@ app.put('/api/user/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// Proxy endpoint
+// =====================
+// CHAT PROXY ENDPOINT
+// =====================
+
 app.post('/api/chat', async (req, res) => {
     try {
         let { message, conversationId } = req.body;
