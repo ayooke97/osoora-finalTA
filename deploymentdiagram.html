@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gambar 3.3 - Deployment Diagram OSOORA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f3f4f6; /* gray-100 */
+        }
+        .node {
+            background-color: #e5e7eb; /* gray-200 */
+            border: 2px solid #9ca3af; /* gray-400 */
+            border-radius: 0.5rem;
+            padding: 1rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .artifact {
+            background-color: #ffffff; /* white */
+            border: 1px solid #d1d5db; /* gray-300 */
+            border-radius: 0.25rem;
+            padding: 0.5rem 1rem;
+            text-align: center;
+            font-size: 0.9rem;
+            box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+        }
+        .connection {
+            position: absolute;
+            border-style: dotted;
+            border-color: #3b82f6; /* blue-500 */
+            z-index: 0;
+        }
+        .connection-label {
+             position: absolute;
+            background-color: #f3f4f6; /* gray-100 */
+            padding: 2px 6px;
+            font-size: 0.75rem;
+            color: #4b5563; /* gray-600 */
+            border-radius: 0.25rem;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="p-8 bg-white rounded-lg shadow-2xl border border-gray-200">
+        <h2 class="text-2xl font-bold text-gray-800 mb-8 text-center">Gambar 3.3 Deployment Diagram</h2>
+        <div class="flex space-x-12 items-center">
+
+            <!-- Client Node -->
+            <div class="node w-64 h-80 flex flex-col items-center">
+                <h3 class="font-bold text-gray-700 mb-2">User Device (Client)</h3>
+                <div class="bg-gray-300 w-full h-full rounded p-4 flex flex-col justify-center items-center space-y-4">
+                    <div class="font-semibold text-lg">🖥️ / 📱</div>
+                    <div class="artifact w-full">
+                        <p class="font-semibold">Web Browser</p>
+                    </div>
+                    <div class="artifact w-full bg-blue-100 border-blue-300">
+                        <p class="font-semibold">Frontend</p>
+                        <p class="text-xs text-gray-600">(HTML, CSS, JS)</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connection -->
+            <div class="relative flex flex-col items-center">
+                 <div class="connection-label" style="transform: translateY(-12px);">HTTPS / API Calls</div>
+                 <div class="text-3xl text-blue-500">↔</div>
+            </div>
+
+            <!-- Server Node -->
+            <div class="node w-64 h-80 flex flex-col items-center">
+                <h3 class="font-bold text-gray-700 mb-2">Web Server</h3>
+                 <div class="bg-gray-300 w-full h-full rounded p-4 flex flex-col justify-center items-center">
+                    <div class="font-semibold text-lg mb-4">☁️</div>
+                    <div class="artifact w-full bg-emerald-100 border-emerald-300">
+                        <p class="font-semibold">Backend Aplikasi</p>
+                        <p class="text-xs text-gray-600">(server.js)</p>
+                    </div>
+                 </div>
+            </div>
+
+            <!-- Connections to External Services -->
+             <div class="relative flex flex-col items-center space-y-16">
+                 <div>
+                    <div class="connection-label" style="transform: translateY(-12px);">HTTPS / REST API</div>
+                    <div class="text-3xl text-blue-500">↔</div>
+                 </div>
+                 <div>
+                    <div class="connection-label" style="transform: translateY(-12px);">Secure TCP/IP</div>
+                    <div class="text-3xl text-blue-500">↔</div>
+                 </div>
+            </div>
+
+            <!-- External Services Nodes -->
+            <div class="flex flex-col space-y-8">
+                <div class="node w-64 h-36 flex flex-col items-center">
+                    <h3 class="font-bold text-gray-700 mb-2">Alibaba Cloud</h3>
+                     <div class="bg-gray-300 w-full h-full rounded p-4 flex flex-col justify-center items-center">
+                        <div class="font-semibold text-lg mb-2">🤖</div>
+                        <div class="artifact w-full bg-green-100 border-green-300">
+                            <p class="font-semibold">AI Model Service</p>
+                        </div>
+                     </div>
+                </div>
+                 <div class="node w-64 h-36 flex flex-col items-center">
+                    <h3 class="font-bold text-gray-700 mb-2">MongoDB Atlas</h3>
+                    <div class="bg-gray-300 w-full h-full rounded p-4 flex flex-col justify-center items-center">
+                        <div class="font-semibold text-lg mb-2">🗃️</div>
+                        <div class="artifact w-full bg-indigo-100 border-indigo-300">
+                            <p class="font-semibold">OSOORA Database</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+</html>
+     

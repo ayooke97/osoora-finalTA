@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gambar 3.1 - Diagram Konteks OSOORA (Versi Final)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f3f4f6; /* gray-100 */
+        }
+        .diagram-container {
+            position: relative;
+            width: 900px;
+            height: 500px;
+        }
+        .entity {
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-weight: 600;
+            color: #111827; /* gray-900 */
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .process {
+            position: absolute;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-weight: 700;
+            color: #047857; /* emerald-700 */
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .arrow-line {
+            position: absolute;
+            border-style: solid;
+            border-color: #3b82f6; /* blue-500 */
+            border-width: 0 0 2px 0;
+        }
+        .arrow-head {
+            position: absolute;
+            width: 0;
+            height: 0;
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+        }
+        .arrow-label {
+            position: absolute;
+            transform: translateX(-50%);
+            background-color: #f3f4f6; /* gray-100 */
+            padding: 0 5px;
+            font-size: 0.8rem;
+            color: #4b5563; /* gray-600 */
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="p-8 bg-white rounded-lg shadow-2xl border border-gray-200">
+        <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Gambar 3.1 Diagram Konteks</h2>
+        <div class="diagram-container">
+            <!-- Entities -->
+            <div class="entity bg-blue-100 border border-blue-300 w-40 h-20" style="top: 215px; left: 0;">
+                Pengguna
+            </div>
+            <div class="entity bg-green-100 border border-green-300 w-40 h-20" style="top: 100px; right: 0;">
+                Sistem AI<br>(Alibaba Cloud)
+            </div>
+            <div class="entity bg-indigo-100 border border-indigo-300 w-40 h-20" style="top: 330px; right: 0;">
+                Database<br>(MongoDB Atlas)
+            </div>
+
+            <!-- Central Process -->
+            <div class="process bg-emerald-200 border-2 border-emerald-400 w-48 h-48" style="top: 191px; left: 376px;">
+                <span class="text-lg">Sistem Chatbot</span>
+                <span class="text-xl">OSOORA</span>
+            </div>
+
+            <!-- Arrows -->
+            <!-- Pengguna to Process -->
+            <div class="arrow-line" style="top: 265px; left: 160px; width: 216px;"></div>
+            <div class="arrow-head" style="top: 259px; left: 368px; border-left: 8px solid #3b82f6;"></div>
+            <div class="arrow-label" style="top: 270px; left: 268px;">Kirim Pesan, Data Login</div>
+
+            <!-- Process to Pengguna -->
+            <div class="arrow-line" style="top: 225px; left: 160px; width: 216px;"></div>
+            <div class="arrow-head" style="top: 219px; left: 160px; border-right: 8px solid #3b82f6;"></div>
+            <div class="arrow-label" style="top: 200px; left: 268px;">Respons AI, Tampilan UI</div>
+
+            <!-- Process to AI -->
+            <div class="arrow-line" style="top: 140px; left: 568px; width: 172px;"></div>
+            <div class="arrow-head" style="top: 134px; left: 732px; border-left: 8px solid #3b82f6;"></div>
+            <div class="arrow-label" style="top: 115px; left: 654px;">Kirim Prompt</div>
+
+            <!-- AI to Process -->
+            <div class="arrow-line" style="top: 160px; left: 568px; width: 172px;"></div>
+            <div class="arrow-head" style="top: 154px; left: 568px; border-right: 8px solid #3b82f6;"></div>
+            <div class="arrow-label" style="top: 165px; left: 654px;">Respons Generatif</div>
+
+            <!-- Process to Database -->
+            <div class="arrow-line" style="top: 370px; left: 568px; width: 172px;"></div>
+            <div class="arrow-head" style="top: 364px; left: 732px; border-left: 8px solid #3b82f6;"></div>
+            <div class="arrow-label" style="top: 375px; left: 654px;">Simpan/Update Data</div>
+
+            <!-- Database to Process -->
+            <div class="arrow-line" style="top: 350px; left: 568px; width: 172px;"></div>
+            <div class="arrow-head" style="top: 344px; left: 568px; border-right: 8px solid #3b82f6;"></div>
+            <div class="arrow-label" style="top: 325px; left: 654px;">Ambil Data</div>
+        </div>
+    </div>
+
+</body>
+</html>
