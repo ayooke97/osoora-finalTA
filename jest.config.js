@@ -1,5 +1,5 @@
 export default {
-  testEnvironment: 'jsdom',
+  testEnvironment: 'node',
   transform: {},
   testMatch: ['**/__tests__/**/*.js?(x)', '**/?(*.)+(spec|test).js?(x)'],
   moduleFileExtensions: ['js', 'json', 'jsx'],
@@ -13,4 +13,4 @@ export default {
     '!**/node_modules/**',
     '!**/vendor/**'
   ]
-}
+};

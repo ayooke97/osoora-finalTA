@@ -61,6 +61,8 @@
             <!-- Login Form -->
             <div class="auth-form" id="login-form">
                 <h2><i class="ri-login-circle-line"></i> Login</h2>
+                <div id="login-error" class="error-message"></div>
+                <div id="login-success" class="success-message"></div>
                 <form>
                     <div class="form-group">
                         <label for="login-email">Email</label>
@@ -85,6 +87,7 @@
             <!-- Register Form -->
             <div class="auth-form hidden" id="register-form">
                 <h2><i class="ri-user-add-line"></i> Create Account</h2>
+                <div id="register-error" class="error-message"></div>
                 <form>
                     <div class="form-group">
                         <label for="register-name">Full Name</label>
@@ -122,6 +125,8 @@
             <!-- Profile Form (Hidden by default) -->
             <div class="auth-form hidden" id="profile-form">
                 <h2><i class="ri-user-settings-line"></i> Profile Settings</h2>
+                <div id="profile-error" class="error-message"></div>
+                <div id="profile-success" class="success-message"></div>
                 <form>
                     <div class="profile-header">
                         <div class="profile-avatar">
@@ -139,26 +144,43 @@
                         <label for="profile-email">Email</label>
                         <input type="email" id="profile-email" required disabled>
                     </div>
-                    <div class="form-group">
-                        <label for="profile-current-password">Current Password</label>
-                        <div class="password-input">
-                            <input type="password" id="profile-current-password">
-                            <button type="button" class="toggle-password">
-                                <i class="ri-eye-off-line"></i>
-                            </button>
+                    <div class="password-change-section">
+                        <h3>Change Password</h3>
+                        <div class="form-group">
+                            <label for="profile-current-password">Current Password</label>
+                            <div class="password-input">
+                                <input type="password" id="profile-current-password" placeholder="Enter current password">
+                                <button type="button" class="toggle-password">
+                                    <i class="ri-eye-off-line"></i>
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="profile-new-password">New Password (optional)</label>
-                        <div class="password-input">
-                            <input type="password" id="profile-new-password">
-                            <button type="button" class="toggle-password">
-                                <i class="ri-eye-off-line"></i>
-                            </button>
+                        <div class="form-group">
+                            <label for="profile-new-password">New Password</label>
+                            <div class="password-input">
+                                <input type="password" id="profile-new-password" placeholder="Enter new password">
+                                <button type="button" class="toggle-password">
+                                    <i class="ri-eye-off-line"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="profile-confirm-password">Confirm New Password</label>
+                            <div class="password-input">
+                                <input type="password" id="profile-confirm-password" placeholder="Confirm new password">
+                                <button type="button" class="toggle-password">
+                                    <i class="ri-eye-off-line"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="form-actions">
-                        <button type="submit" class="btn-primary">Save Changes</button>
+                        <button type="submit" class="btn-primary" id="save-profile-btn">
+                            <span class="btn-text">Save Changes</span>
+                            <span class="btn-loader hidden">
+                                <i class="ri-loader-4-line rotating"></i>
+                            </span>
+                        </button>
                         <button type="button" class="btn-danger" onclick="logout()">Logout</button>
                     </div>
                 </form>
@@ -166,6 +188,31 @@
         </main>
     </div>
 
+    <!-- Add a script to check for token before the main script loads -->
+    <script>
+        // Immediately check for token on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const token = localStorage.getItem('token');
+            const loginForm = document.getElementById('login-form');
+            const profileForm = document.getElementById('profile-form');
+            
+            if (token) {
+                // If token exists, hide login form and show profile form immediately
+                loginForm.classList.add('hidden');
+                loginForm.style.display = 'none';
+                profileForm.classList.remove('hidden');
+                
+                // Fill profile form with user data from localStorage
+                const userData = JSON.parse(localStorage.getItem('user') || '{}');
+                if (userData.username) {
+                    document.getElementById('profile-name').value = userData.username;
+                }
+                if (userData.email) {
+                    document.getElementById('profile-email').value = userData.email;
+                }
+            }
+        });
+    </script>
     <script src="account.js"></script>
 </body>
 </html>
