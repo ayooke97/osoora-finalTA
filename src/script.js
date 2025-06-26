@@ -6,18 +6,32 @@ function checkSession() {
     const token = localStorage.getItem('token');
     const user = localStorage.getItem('user');
     
-    if (!token || !user) {
+    // Store session state in sessionStorage for consistent UI across the app
+    if (token && user) {
+        sessionStorage.setItem('isLoggedIn', 'true');
+        return true;
+    } else {
+        sessionStorage.removeItem('isLoggedIn');
         window.location.href = 'account.html';
         return false;
     }
-    return true;
 }
 
 // Run session check immediately, but only if not in test environment
 if (typeof process === 'undefined' || !process.env.JEST_WORKER_ID) {
-    // Not running in Jest environment, perform authentication check
-    if (!checkSession()) {
-        // Stop further script execution if not authenticated
+    // Check if we have a valid session before redirecting
+    const hasToken = !!localStorage.getItem('token');
+    const hasUser = !!localStorage.getItem('user');
+    
+    // Set session flag if we have valid credentials
+    if (hasToken && hasUser) {
+        sessionStorage.setItem('isLoggedIn', 'true');
+    }
+    
+    // Only redirect if we don't have credentials
+    if (!hasToken || !hasUser) {
+        // Not authenticated, redirect to login
+        window.location.href = 'account.html';
         throw new Error('Not authenticated');
     }
 }
@@ -884,33 +898,98 @@ addSafeEventListener(loginButton, 'click', () => {
     window.location.href = 'account.html';
 });
 
-// Logout button functionality
+// Logout button functionality with improved UX and error handling
 addSafeEventListener(logoutButton, 'click', () => {
-    if (confirm('Are you sure you want to sign out?')) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        updateUserInterface();
-        window.location.href = 'account.html';
+    try {
+        // Store the original button content
+        const originalContent = logoutButton.innerHTML;
+        
+        // Ask for confirmation
+        if (confirm('Are you sure you want to sign out?')) {
+            // Show loading state
+            logoutButton.disabled = true;
+            logoutButton.innerHTML = '<i class="ri-loader-4-line rotating"></i> <span>Signing out...</span>';
+            
+            // Clear ALL session storage related to authentication
+            sessionStorage.removeItem('authChecked');
+            sessionStorage.removeItem('isLoggedIn');
+            
+            // Clear all authentication data from localStorage
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            
+            // Update UI immediately
+            updateUserInterface();
+            
+            // Close the dropdown
+            if (userDropdown) userDropdown.classList.add('hidden');
+            
+            // Add a small delay to show the loading state
+            setTimeout(() => {
+                // Reset the button
+                if (logoutButton) {
+                    logoutButton.disabled = false;
+                    logoutButton.innerHTML = originalContent;
+                }
+                
+                // Show a success message
+                updateConnectionStatus('You have been successfully signed out', 'success');
+                
+                // Auto-hide the message after 5 seconds
+                setTimeout(() => {
+                    updateConnectionStatus('', '');
+                }, 5000);
+            }, 500);
+        }
+    } catch (error) {
+        console.error('Error during logout:', error);
+        updateConnectionStatus('There was an error signing out. Please try again.', 'error');
+        
+        // Reset the button if there was an error
+        if (logoutButton) {
+            logoutButton.disabled = false;
+            logoutButton.innerHTML = '<i class="ri-logout-circle-line"></i> <span>Sign Out</span>';
+        }
     }
 });
 
 function updateUserInterface() {
     const user = JSON.parse(localStorage.getItem('user'));
-    const isAuthenticated = !!localStorage.getItem('token');
+    const token = localStorage.getItem('token');
+    const isAuthenticated = !!token && !!user;
+    const isLoggedInSession = sessionStorage.getItem('isLoggedIn') === 'true';
+    const dropdownItems = document.querySelector('.dropdown-items');
 
-    if (isAuthenticated && user) {
-        // Update avatar
-        const avatarUrl = user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=7c3aed&color=fff`;
-        userAvatar.src = avatarUrl;
-        document.querySelector('.user-info img').src = avatarUrl;
+    // Check both localStorage token and sessionStorage flag for authentication
+    if ((isAuthenticated && user) || isLoggedInSession) {
+        // Update avatar - safely handle user object which might be null in some edge cases
+        let avatarUrl = 'https://ui-avatars.com/api/?name=User&background=7c3aed&color=fff';
+        if (user && user.name) {
+            avatarUrl = user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=7c3aed&color=fff`;
+        }
+        
+        if (userAvatar) userAvatar.src = avatarUrl;
+        const userInfoImg = document.querySelector('.user-info img');
+        if (userInfoImg) userInfoImg.src = avatarUrl;
 
         // Update name and email with safety checks
-        if (userName) userName.textContent = user.name;
-        if (dropdownUserName) dropdownUserName.textContent = user.name;
-        if (userEmail) userEmail.textContent = user.email;
-
-        // Show/hide buttons with safety checks
-        if (loginButton) loginButton.classList.add('hidden');
+        if (userName && user) userName.textContent = user.name || 'User';
+        if (dropdownUserName && user) dropdownUserName.textContent = user.name || 'User';
+        if (userEmail && user) userEmail.textContent = user.email || 'user@example.com';
+        
+        // IMPORTANT: Always check for and remove the login button when logged in
+        // This runs on every UI update to ensure consistency
+        const existingLoginButton = document.getElementById('login-button');
+        if (existingLoginButton && dropdownItems) {
+            try {
+                dropdownItems.removeChild(existingLoginButton);
+                console.log('Login button removed successfully');
+            } catch (error) {
+                console.error('Error removing login button:', error);
+            }
+        }
+        
+        // Show logout button
         if (logoutButton) logoutButton.classList.remove('hidden');
     } else {
         // Reset to guest state
@@ -922,8 +1001,25 @@ function updateUserInterface() {
         dropdownUserName.textContent = 'Guest';
         userEmail.textContent = 'Not signed in';
 
-        loginButton.classList.remove('hidden');
-        logoutButton.classList.add('hidden');
+        // Add login button back if it doesn't exist
+        if (!document.getElementById('login-button') && dropdownItems) {
+            const loginBtn = document.createElement('button');
+            loginBtn.className = 'dropdown-item';
+            loginBtn.id = 'login-button';
+            loginBtn.innerHTML = '<i class="ri-login-circle-line"></i><span>Sign In</span>';
+            loginBtn.addEventListener('click', () => {
+                window.location.href = 'account.html';
+            });
+            
+            // Insert before logout button if it exists
+            if (logoutButton) {
+                dropdownItems.insertBefore(loginBtn, logoutButton);
+            } else {
+                dropdownItems.appendChild(loginBtn);
+            }
+        }
+        
+        if (logoutButton) logoutButton.classList.add('hidden');
     }
 }
 

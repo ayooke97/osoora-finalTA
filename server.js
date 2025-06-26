@@ -122,6 +122,25 @@ const authenticateToken = async (req, res, next) => {
 // AUTH ENDPOINTS
 // =====================
 
+// Create a conversation (for test automation)
+app.post('/api/conversations', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { title } = req.body;
+    const conversation = {
+      conversation_id: uuidv4(),
+      title: title || 'Untitled Conversation',
+      user_id: userId,
+      created_at: new Date(),
+      messages: []
+    };
+    await db.collection('conversations').insertOne(conversation);
+    res.status(200).json({ conversation_id: conversation.conversation_id, ...conversation });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create conversation', details: error.message });
+  }
+});
+
 // Register new user
 app.post('/api/auth/register', async (req, res) => {
   try {
