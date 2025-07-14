@@ -218,21 +218,21 @@ app.post('/api/auth/login', async (req, res) => {
     
     // Validate input
     if (!email || !password) {
-      return res.status(400).json({ error: 'Missing email or password' });
+      return res.status(400).json({ error: 'Email atau password tidak boleh kosong' });
     }
     
     // Find user
     const user = await db.collection('users').findOne({ email });
     
     if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Pengguna tidak ditemukan' });
     }
     
     // Verify password
     const validPassword = await bcrypt.compare(password, user.password_hash);
     
     if (!validPassword) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Password salah' });
     }
     
     // Generate new token
@@ -791,26 +791,30 @@ app.post('/api/chat', async (req, res) => {
                                                 
                                                 // Now update with session ID and message content - using snake_case field names consistently
                                                 const updateResult = await db.collection('conversations').updateOne(
-                                                    { conversation_id: conversationId },
-                                                    { 
-                                                        $set: { 
-                                                        dashscope_session_id: sessionId, 
-                                                        updated_at: new Date(),
-                                                        messages: [
-                                                            {
-                                                                role: 'user',
-                                                                content: typeof message === 'object' ? JSON.stringify(message) : message,
-                                                                timestamp: new Date()
-                                                            },
-                                                            {
-                                                                role: 'assistant',
-                                                                content: typeof lastProcessedText === 'object' ? JSON.stringify(lastProcessedText) : lastProcessedText,
-                                                                timestamp: new Date()
-                                                            }
-                                                        ]
-                                                    }
-                                                }
-                                            );
+                                                  { conversation_id: conversationId },
+                                                  { 
+                                                      $set: { 
+                                                          dashscope_session_id: sessionId, 
+                                                          updated_at: new Date()
+                                                      },
+                                                      $push: {
+                                                          messages: {
+                                                              $each: [
+                                                                  {
+                                                                      role: 'user',
+                                                                      content: typeof message === 'object' ? JSON.stringify(message) : message,
+                                                                      timestamp: new Date()
+                                                                  },
+                                                                  {
+                                                                      role: 'assistant',
+                                                                      content: typeof lastProcessedText === 'object' ? JSON.stringify(lastProcessedText) : lastProcessedText,
+                                                                      timestamp: new Date()
+                                                                  }
+                                                              ]
+                                                          }
+                                                      }
+                                                  }
+                                              );
                                         } catch (dbError) {
                                             console.error('Error updating conversation with session ID:', dbError);
                                         }
