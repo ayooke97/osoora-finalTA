@@ -527,27 +527,6 @@ app.post('/api/user/preferences', authenticateToken, async (req, res) => {
   }
 });
 
-// GET user preferences
-app.get('/api/user/preferences', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    
-    const preferences = await db.collection('user_preferences').findOne({ user_id: userId });
-    
-    if (!preferences) {
-      return res.status(404).json({ 
-        error: 'User preferences not found' 
-      });
-    }
-    
-    return res.status(200).json(preferences);
-    
-  } catch (error) {
-    console.error('Error getting user preferences:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 app.put('/api/user/preferences', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -924,7 +903,7 @@ app.post('/api/chat', async (req, res) => {
                                                         created_at: new Date(),
                                                         updated_at: new Date(),
                                                         messages: [],
-                                                        message: 'Chat session started', // Required field based on error
+                                                        message: 'Chat session started', // Required field based on schema
                                                         dashscope_session_id: null // Will be updated later
                                                     };
                                                     
