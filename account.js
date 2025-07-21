@@ -68,6 +68,25 @@ async function getPreferredTheme() {
             if (response.ok) {
                 const preferences = await response.json();
                 return preferences.theme || 'system';
+            } else if (response.status === 404) {
+                // Preferences don't exist, create them with POST
+                console.log('No preferences found, creating default with POST...');
+                try {
+                    const createResponse = await fetch(`${API_BASE_URL}/api/user/preferences`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ theme: 'system' })
+                    });
+                    if (createResponse.ok) {
+                        console.log('Default preferences created successfully');
+                        return 'system';
+                    }
+                } catch (createError) {
+                    console.error('Error creating user preferences:', createError);
+                }
             }
         } catch (error) {
             console.error('Error fetching user preferences:', error);
@@ -105,13 +124,40 @@ function updateActiveTheme(theme) {
 }
 
 async function setTheme(theme, updateStorage = true) {
+    // BULLETPROOF Promise protection - same as src/account.js
+    if (theme && typeof theme.then === 'function') {
+        console.error('setTheme received a Promise! Rejecting and using system theme. Promise:', theme);
+        theme = 'system';
+    }
+    
+    // EXTRA PROTECTION: Check for stringified Promise objects
+    if (typeof theme === 'string' && (theme.includes('[object Promise]') || theme.includes('Promise'))) {
+        console.error('setTheme received stringified Promise! Using system theme. Value:', theme);
+        theme = 'system';
+    }
+    
+    // FINAL CHECK: Force to string and validate
+    if (typeof theme !== 'string') {
+        console.error('setTheme theme is not a string! Type:', typeof theme, 'Value:', theme);
+        theme = 'system';
+    }
+    
     const effectiveTheme = getEffectiveTheme(theme);
     
     document.documentElement.style.setProperty('--transition-normal', 'none');
     document.body.classList.remove('light-theme', 'dark-theme');
     
     requestAnimationFrame(() => {
-        document.body.classList.add(`${effectiveTheme}-theme`);
+        // EMERGENCY: Final validation before adding to DOM
+        let finalTheme = effectiveTheme;
+        if (typeof finalTheme !== 'string' || finalTheme.includes('Promise') || finalTheme.includes('object')) {
+            console.error('CRITICAL: finalTheme is unsafe!', finalTheme);
+            finalTheme = 'system';
+        }
+        
+        const themeClass = `${finalTheme}-theme`;
+        console.log('Adding CSS class:', themeClass); // Debug log
+        document.body.classList.add(themeClass);
         document.documentElement.style.setProperty('--transition-normal', 'all 0.3s ease');
         
         if (updateStorage) {
@@ -167,9 +213,16 @@ mediaQuery.addEventListener('change', (e) => {
     }
 });
 
-// Initialize theme
-const initialTheme = getPreferredTheme();
-setTheme(initialTheme, false);
+// Initialize theme with async/await to handle Promise properly
+(async () => {
+    try {
+        const initialTheme = await getPreferredTheme(); // Await the Promise!
+        setTheme(initialTheme, false);
+    } catch (error) {
+        console.error('Error initializing theme:', error);
+        setTheme('system', false); // Fallback
+    }
+})();
 
 // Form submissions
 loginForm.addEventListener('submit', async (e) => {

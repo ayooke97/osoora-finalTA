@@ -1,39 +1,99 @@
 // Access environment variables in client-side JS through webpack
 // These will be injected at build time
 
-// Session check at the start of the file
-function checkSession() {
-    const token = localStorage.getItem('token');
-    const user = localStorage.getItem('user');
+// Enhanced session validation function
+function validateSession() {
+    console.log('🔐 Validating user session...');
     
-    // Store session state in sessionStorage for consistent UI across the app
-    if (token && user) {
-        sessionStorage.setItem('isLoggedIn', 'true');
-        return true;
-    } else {
+    const token = localStorage.getItem('token');
+    const userStr = localStorage.getItem('user');
+    
+    console.log('Token exists:', !!token);
+    console.log('User data exists:', !!userStr);
+    
+    // Check if both token and user data exist
+    if (!token || !userStr) {
+        console.log('❌ Missing authentication credentials');
+        console.log('Token:', token ? 'Present' : 'Missing');
+        console.log('User:', userStr ? 'Present' : 'Missing');
+        
+        // Clear any remaining session data
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
         sessionStorage.removeItem('isLoggedIn');
+        sessionStorage.removeItem('authChecked');
+        
+        console.log('🚀 Redirecting to login page...');
         window.location.href = 'account.html';
         return false;
     }
+    
+    // Try to parse user data
+    let user;
+    try {
+        user = JSON.parse(userStr);
+        console.log('✅ User data parsed successfully:', user.username || 'No username');
+    } catch (error) {
+        console.log('❌ Invalid user data format');
+        
+        // Clear corrupted data
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('isLoggedIn');
+        sessionStorage.removeItem('authChecked');
+        
+        console.log('🚀 Redirecting to login page...');
+        window.location.href = 'account.html';
+        return false;
+    }
+    
+    // Validate user object structure
+    if (!user.user_id || !user.username || !user.email) {
+        console.log('❌ Incomplete user data:', user);
+        
+        // Clear incomplete data
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('isLoggedIn');
+        sessionStorage.removeItem('authChecked');
+        
+        console.log('🚀 Redirecting to login page...');
+        window.location.href = 'account.html';
+        return false;
+    }
+    
+    // Validate token format (should be a UUID)
+    const tokenPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!tokenPattern.test(token)) {
+        console.log('❌ Invalid token format');
+        
+        // Clear invalid token
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('isLoggedIn');
+        sessionStorage.removeItem('authChecked');
+        
+        console.log('🚀 Redirecting to login page...');
+        window.location.href = 'account.html';
+        return false;
+    }
+    
+    console.log('✅ Session validation passed');
+    sessionStorage.setItem('isLoggedIn', 'true');
+    sessionStorage.setItem('authChecked', 'true');
+    return true;
 }
 
-// Run session check immediately, but only if not in test environment
+// Run comprehensive session check immediately
 if (typeof process === 'undefined' || !process.env.JEST_WORKER_ID) {
-    // Check if we have a valid session before redirecting
-    const hasToken = !!localStorage.getItem('token');
-    const hasUser = !!localStorage.getItem('user');
+    console.log('🔍 Checking authentication status on page load...');
     
-    // Set session flag if we have valid credentials
-    if (hasToken && hasUser) {
-        sessionStorage.setItem('isLoggedIn', 'true');
+    if (!validateSession()) {
+        // validateSession already handles the redirect
+        throw new Error('Authentication failed - redirecting to login');
     }
     
-    // Only redirect if we don't have credentials
-    if (!hasToken || !hasUser) {
-        // Not authenticated, redirect to login
-        window.location.href = 'account.html';
-        throw new Error('Not authenticated');
-    }
+    console.log('🎉 User authenticated successfully!');
 }
 
 // Global variables
@@ -83,16 +143,56 @@ function formatUrl(url, defaultPort = 5101) {
 
 // Configuration object for API
 const config = {
-    // Access environment variables through process.env (injected by webpack)
-    port: process.env.PORT || 5101,
-    apiUrl: formatUrl(process.env.API_URL, 5101),
-    dashscopeApiKey: process.env.DASHSCOPE_API_KEY,
-    dashscopeUrl: process.env.DASHSCOPE_URL,
+    // Browser-safe defaults (no process.env)
+    port: 5101,
+    apiUrl: formatUrl(null, 5101),
+    dashscopeApiKey: null,
+    dashscopeUrl: null,
     // Determine the best proxyUrl based on hostname
     proxyUrl: window.location.hostname === 'baktipm.com' 
         ? 'https://baktipm.com/api/chat' 
-        : formatUrl(process.env.PROXY_URL, 5101)
+        : formatUrl(null, 5101)
 };
+
+// Global error handler for authentication failures
+async function handleAuthError(response) {
+    if (response && (response.status === 403 || response.status === 401)) {
+        console.log('Authentication failed, clearing tokens and redirecting...');
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('isLoggedIn');
+        sessionStorage.removeItem('authChecked');
+        window.location.href = 'account.html';
+        return true; // Indicates we handled the error
+    }
+    return false; // Let other errors be handled normally
+}
+
+// Enhanced fetch wrapper that handles authentication errors automatically
+async function authenticatedFetch(url, options = {}) {
+    const token = localStorage.getItem('token');
+    
+    if (token) {
+        options.headers = {
+            ...options.headers,
+            'Authorization': `Bearer ${token}`
+        };
+    }
+    
+    try {
+        const response = await fetch(url, options);
+        
+        // Handle authentication errors automatically
+        if (await handleAuthError(response)) {
+            return null; // Request was redirected due to auth error
+        }
+        
+        return response;
+    } catch (error) {
+        console.error('Fetch error:', error);
+        throw error;
+    }
+}
 
 // Create axios instance with default config
 const api = axios.create({
@@ -127,6 +227,27 @@ const userEmail = document.getElementById('user-email');
 const loginButton = document.getElementById('login-button');
 const logoutButton = document.getElementById('logout-button');
 const clearHistoryButton = document.getElementById('clear-history');
+
+// Helper function to ensure user is authenticated
+function requireAuth() {
+    const token = localStorage.getItem('token');
+    const user = localStorage.getItem('user');
+    
+    if (!token || !user) {
+        console.log('🔒 No authentication token found, redirecting to login...');
+        // Clear any partial session data
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('isLoggedIn');
+        sessionStorage.removeItem('authChecked');
+        
+        // Redirect to login page
+        window.location.href = 'account.html';
+        return false;
+    }
+    
+    return token;
+}
 
 // Log DOM elements to console
 // console.log('DOM Elements loaded:', {
@@ -195,7 +316,7 @@ function createNewConversation() {
     clearChat();
 
     // Add welcome message
-    const welcomeMessage = "👋 Hello! I'm your AI assistant. How can I help you today?";
+    const welcomeMessage = "👋 Halo! Saya Osoora. Silahkan tanyakan seputar KTP dan tanah.";
     
     // Check if the conversation already has messages or if welcome message already exists
     const hasWelcomeMessage = conversation.messages.some(
@@ -246,10 +367,42 @@ function clearChat() {
     userInput.focus();
 }
 
-// Function to save conversations to localStorage
-function saveConversations() {
-    localStorage.setItem('conversations', JSON.stringify(conversations));
-    toggleEmptyState();
+// Function to save conversations to server via API
+async function saveConversations() {
+    try {
+        console.log('Saving conversations to server...');
+        
+        // Ensure user is authenticated, redirect to login if not
+        const token = requireAuth();
+        if (!token) return; // requireAuth handles redirect
+        
+        const response = await authenticatedFetch('/api/conversations/save', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ conversations })
+        });
+        
+        if (response && response.ok) {
+            const result = await response.json();
+            console.log(`✅ Successfully saved ${result.count} conversations`);
+        } else {
+            console.error('Failed to save conversations:', response?.status);
+            // Fall back to localStorage as backup
+            localStorage.setItem('conversations', JSON.stringify(conversations));
+            console.log('💾 Saved to localStorage as backup');
+        }
+        
+    } catch (error) {
+        console.error('Error saving conversations:', error);
+        // Fall back to localStorage as backup
+        localStorage.setItem('conversations', JSON.stringify(conversations));
+        console.log('💾 Saved to localStorage as backup');
+    } finally {
+        toggleEmptyState();
+    }
 }
 
 // Function to validate UUID v4 format
@@ -258,8 +411,57 @@ function isValidUUIDv4(id) {
     return uuidV4Regex.test(id);
 }
 
-// Function to load saved conversations from localStorage
-function loadConversations() {
+// Function to load conversations from server via API
+async function loadConversations() {
+    try {
+        console.log('Loading conversations from server...');
+        
+        // Ensure user is authenticated, redirect to login if not
+        const token = requireAuth();
+        if (!token) return; // requireAuth handles redirect
+        
+        const response = await authenticatedFetch('/api/conversations', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (response && response.ok) {
+            const serverConversations = await response.json();
+            console.log(`✅ Loaded ${serverConversations.length} conversations from server`);
+            
+            conversations = serverConversations;
+            
+            // Convert timestamps to Date objects
+            conversations.forEach(conv => {
+                conv.timestamp = new Date(conv.timestamp);
+            });
+            
+            // Set current conversation to the most recent one, if available
+            if (conversations.length > 0) {
+                currentConversationId = conversations[0].id;
+            }
+            
+        } else {
+            console.error('Failed to load conversations from server:', response?.status);
+            // Fall back to localStorage
+            loadConversationsFromLocalStorage();
+        }
+        
+    } catch (error) {
+        console.error('Error loading conversations from server:', error);
+        // Fall back to localStorage
+        loadConversationsFromLocalStorage();
+    } finally {
+        updateHistoryList();
+        toggleEmptyState();
+    }
+}
+
+// Backup function to load from localStorage
+function loadConversationsFromLocalStorage() {
+    console.log('💾 Loading conversations from localStorage backup...');
     const saved = localStorage.getItem('conversations');
     if (saved) {
         conversations = JSON.parse(saved);
@@ -268,7 +470,6 @@ function loadConversations() {
         let needsMigration = false;
         conversations.forEach(conv => {
             if (!isValidUUIDv4(conv.id)) {
-                // If not a valid UUID v4, generate a new one
                 console.log(`Converting old conversation ID ${conv.id} to UUID format`);
                 conv.id = generateId();
                 needsMigration = true;
@@ -293,9 +494,6 @@ function loadConversations() {
     } else {
         conversations = [];
     }
-    
-    updateHistoryList();
-    toggleEmptyState();
 }
 
 // Function to toggle empty state
@@ -379,15 +577,131 @@ function updateHistoryList() {
     }
 }
 
-// Function to load a specific conversation
-function loadConversation(conversationId) {
-    currentConversationId = conversationId;
-    const conversation = conversations.find(c => c.id === conversationId);
-    if (conversation) {
+// Function to load a specific conversation (local first, server if needed)
+async function loadConversation(conversationId) {
+    try {
+        console.log(`Loading conversation ${conversationId}...`);
+        
+        // Ensure user is authenticated, redirect to login if not
+        const token = requireAuth();
+        if (!token) return; // requireAuth handles redirect
+        
+        currentConversationId = conversationId;
+        
+        // First try to find in local conversations array
+        const localConversation = conversations.find(c => c.id === conversationId);
+        
+        // Check if we have complete local data
+        const hasCompleteLocalData = localConversation && 
+            localConversation.messages && 
+            Array.isArray(localConversation.messages);
+        
+        if (hasCompleteLocalData) {
+            // Use local data without API call
+            console.log(`📱 Using local cache for "${localConversation.topic}" (${localConversation.messages.length} messages)`);
+            
+            chatMessages.innerHTML = '';
+            localConversation.messages.forEach(msg => {
+                addMessage(msg.content, msg.role === 'user', false);
+            });
+            updateHistoryList();
+            
+            // No server fetch needed - we have complete data locally
+            return;
+        }
+        
+        // If no local data or incomplete, fetch from server
+        console.log(hasCompleteLocalData ? '🔄 Refreshing from server...' : '🌐 Fetching from server...');
+        
+        // Clear chat before loading
         chatMessages.innerHTML = '';
-        conversation.messages.forEach(msg => {
-            addMessage(msg.content, msg.role === 'user', false);
+        
+        const response = await authenticatedFetch(`/api/conversations/${conversationId}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
         });
+        
+        if (response && response.ok) {
+            const serverConversation = await response.json();
+            console.log(`✅ Loaded conversation "${serverConversation.topic}" from server (${serverConversation.messages?.length || 0} messages)`);
+            
+            // Convert timestamp to Date object
+            serverConversation.timestamp = new Date(serverConversation.timestamp);
+            
+            // Update local conversations array with fresh data
+            const existingIndex = conversations.findIndex(c => c.id === conversationId);
+            if (existingIndex >= 0) {
+                conversations[existingIndex] = serverConversation;
+            } else {
+                // Add to local array if not found
+                conversations.unshift(serverConversation);
+            }
+            
+            // Render messages from server
+            chatMessages.innerHTML = '';
+            if (serverConversation.messages && serverConversation.messages.length > 0) {
+                serverConversation.messages.forEach(msg => {
+                    addMessage(msg.content, msg.role === 'user', false);
+                });
+            }
+            
+            updateHistoryList();
+            
+            // Save updated conversations to localStorage for future use
+            localStorage.setItem('conversations', JSON.stringify(conversations));
+            
+        } else if (response?.status === 404) {
+            console.error('❌ Conversation not found on server');
+            updateConnectionStatus('Conversation not found', 'error');
+            
+            // Remove from local array if it doesn't exist on server
+            const index = conversations.findIndex(c => c.id === conversationId);
+            if (index >= 0) {
+                conversations.splice(index, 1);
+                updateHistoryList();
+            }
+            
+            // Load first available conversation or create new one
+            if (conversations.length > 0) {
+                await loadConversation(conversations[0].id);
+            } else {
+                createNewConversation();
+            }
+            
+        } else {
+            console.error('Failed to load conversation from server:', response?.status);
+            
+            // If server fails but we have local data, use it
+            if (localConversation) {
+                console.log('💾 Using local cache as fallback');
+                chatMessages.innerHTML = '';
+                localConversation.messages?.forEach(msg => {
+                    addMessage(msg.content, msg.role === 'user', false);
+                });
+                updateConnectionStatus('Using cached conversation', 'warning');
+            } else {
+                updateConnectionStatus('Failed to load conversation', 'error');
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error loading conversation:', error);
+        
+        // Fallback to local version if available
+        const localConversation = conversations.find(c => c.id === conversationId);
+        if (localConversation) {
+            console.log('💾 Using local cache due to error');
+            chatMessages.innerHTML = '';
+            localConversation.messages?.forEach(msg => {
+                addMessage(msg.content, msg.role === 'user', false);
+            });
+            updateConnectionStatus('Using cached conversation', 'warning');
+        } else {
+            updateConnectionStatus('Failed to load conversation', 'error');
+        }
+        
         updateHistoryList();
     }
 }
@@ -509,14 +823,12 @@ async function sendToAPI(message) {
         // The config.proxyUrl is already formatted with the formatUrl utility
         const apiEndpoint = config.proxyUrl;
         
-        // Get authentication token
-        const token = localStorage.getItem('token');
-        if (!token) {
-            throw new Error('Authentication required. Please login again.');
-        }
+        // Ensure user is authenticated, redirect to login if not
+        const token = requireAuth();
+        if (!token) return; // requireAuth handles redirect
         
         // Create event source for streaming
-        const response = await fetch(apiEndpoint, {
+        const response = await authenticatedFetch(apiEndpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -800,15 +1112,41 @@ function updateThemeIcon(theme) {
 }
 
 function setTheme(theme, updateStorage = true) {
-    // Make sure we have a string value, not a promise
-    const themeValue = typeof theme === 'string' ? theme : 'system';
+    // BULLETPROOF Promise protection - same as account.js
+    if (theme && typeof theme.then === 'function') {
+        console.error('setTheme received a Promise! Rejecting and using system theme. Promise:', theme);
+        theme = 'system';
+    }
+    
+    // EXTRA PROTECTION: Check for stringified Promise objects
+    if (typeof theme === 'string' && (theme.includes('[object Promise]') || theme.includes('Promise'))) {
+        console.error('setTheme received stringified Promise! Using system theme. Value:', theme);
+        theme = 'system';
+    }
+    
+    // FINAL CHECK: Force to string and validate
+    if (typeof theme !== 'string') {
+        console.error('setTheme theme is not a string! Type:', typeof theme, 'Value:', theme);
+        theme = 'system';
+    }
+    
+    // Make sure we have a string value, not a promise or other object
+    let themeValue = 'system'; // default fallback
+    
+    if (typeof theme === 'string' && (theme === 'light' || theme === 'dark' || theme === 'system')) {
+        themeValue = theme;
+    } else {
+        console.warn('setTheme received unsafe value, defaulting to system:', typeof theme, theme);
+    }
     
     document.documentElement.style.setProperty('--transition-normal', 'none');
     document.body.classList.remove('light-theme', 'dark-theme');
     
     requestAnimationFrame(() => {
-        // Ensure we're adding a valid class name
-        document.body.classList.add(`${themeValue}-theme`);
+        // Ensure we're adding a valid class name - double check it's still a string
+        if (typeof themeValue === 'string') {
+            document.body.classList.add(`${themeValue}-theme`);
+        }
         document.documentElement.style.setProperty('--transition-normal', 'all 0.3s ease');
         
         if (updateStorage) {
@@ -820,22 +1158,28 @@ function setTheme(theme, updateStorage = true) {
 }
 
 // Initialize theme with proper type checking to avoid Promise errors
-const initialTheme = getPreferredTheme();
-if (typeof initialTheme === 'string') {
-    setTheme(initialTheme, false);
-} else if (initialTheme instanceof Promise) {
-    // If it's a promise, wait for it to resolve
-    initialTheme.then(theme => setTheme(theme || 'system', false))
-              .catch(() => setTheme('system', false));
-} else {
-    // Fallback to system theme
-    setTheme('system', false);
-}
+(async () => {
+    const initialTheme = getPreferredTheme();
+    if (typeof initialTheme === 'string') {
+        setTheme(initialTheme, false);
+    } else if (initialTheme instanceof Promise) {
+        try {
+            const resolvedTheme = await initialTheme;
+            setTheme(resolvedTheme || 'system', false);
+        } catch {
+            setTheme('system', false);
+        }
+    } else {
+        setTheme('system', false);
+    }
+})();
 
 // Theme toggle event listener
 addSafeEventListener(themeToggle, 'click', () => {
     const currentTheme = localStorage.getItem('theme') || getPreferredTheme();
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    // Ensure currentTheme is a string, not a promise
+    const themeValue = typeof currentTheme === 'string' ? currentTheme : 'system';
+    const newTheme = themeValue === 'dark' ? 'light' : 'dark';
     setTheme(newTheme);
 });
 
@@ -898,60 +1242,7 @@ addSafeEventListener(loginButton, 'click', () => {
     window.location.href = 'account.html';
 });
 
-// Logout button functionality with improved UX and error handling
-addSafeEventListener(logoutButton, 'click', () => {
-    try {
-        // Store the original button content
-        const originalContent = logoutButton.innerHTML;
-        
-        // Ask for confirmation
-        if (confirm('Are you sure you want to sign out?')) {
-            // Show loading state
-            logoutButton.disabled = true;
-            logoutButton.innerHTML = '<i class="ri-loader-4-line rotating"></i> <span>Signing out...</span>';
-            
-            // Clear ALL session storage related to authentication
-            sessionStorage.removeItem('authChecked');
-            sessionStorage.removeItem('isLoggedIn');
-            
-            // Clear all authentication data from localStorage
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            
-            // Update UI immediately
-            updateUserInterface();
-            
-            // Close the dropdown
-            if (userDropdown) userDropdown.classList.add('hidden');
-            
-            // Add a small delay to show the loading state
-            setTimeout(() => {
-                // Reset the button
-                if (logoutButton) {
-                    logoutButton.disabled = false;
-                    logoutButton.innerHTML = originalContent;
-                }
-                
-                // Show a success message
-                updateConnectionStatus('You have been successfully signed out', 'success');
-                
-                // Auto-hide the message after 5 seconds
-                setTimeout(() => {
-                    updateConnectionStatus('', '');
-                }, 5000);
-            }, 500);
-        }
-    } catch (error) {
-        console.error('Error during logout:', error);
-        updateConnectionStatus('There was an error signing out. Please try again.', 'error');
-        
-        // Reset the button if there was an error
-        if (logoutButton) {
-            logoutButton.disabled = false;
-            logoutButton.innerHTML = '<i class="ri-logout-circle-line"></i> <span>Sign Out</span>';
-        }
-    }
-});
+// Logout functionality will be handled by attachLogoutHandler function
 
 function updateUserInterface() {
     const user = JSON.parse(localStorage.getItem('user'));
@@ -959,13 +1250,17 @@ function updateUserInterface() {
     const isAuthenticated = !!token && !!user;
     const isLoggedInSession = sessionStorage.getItem('isLoggedIn') === 'true';
     const dropdownItems = document.querySelector('.dropdown-items');
+    
+    console.log('Updating UI - Auth state:', { isAuthenticated, isLoggedInSession, hasUser: !!user, hasToken: !!token });
 
     // Check both localStorage token and sessionStorage flag for authentication
     if ((isAuthenticated && user) || isLoggedInSession) {
+        console.log('User is authenticated, showing logout button');
+        
         // Update avatar - safely handle user object which might be null in some edge cases
         let avatarUrl = 'https://ui-avatars.com/api/?name=User&background=7c3aed&color=fff';
-        if (user && user.name) {
-            avatarUrl = user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=7c3aed&color=fff`;
+        if (user && user.username) {
+            avatarUrl = user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.username)}&background=7c3aed&color=fff`;
         }
         
         if (userAvatar) userAvatar.src = avatarUrl;
@@ -973,8 +1268,8 @@ function updateUserInterface() {
         if (userInfoImg) userInfoImg.src = avatarUrl;
 
         // Update name and email with safety checks
-        if (userName && user) userName.textContent = user.name || 'User';
-        if (dropdownUserName && user) dropdownUserName.textContent = user.name || 'User';
+        if (userName && user) userName.textContent = user.username || 'User';
+        if (dropdownUserName && user) dropdownUserName.textContent = user.username || 'User';
         if (userEmail && user) userEmail.textContent = user.email || 'user@example.com';
         
         // IMPORTANT: Always check for and remove the login button when logged in
@@ -989,9 +1284,22 @@ function updateUserInterface() {
             }
         }
         
-        // Show logout button
-        if (logoutButton) logoutButton.classList.remove('hidden');
+        // Show logout button and ensure it's available for event attachment
+        const logoutBtn = document.getElementById('logout-button');
+        if (logoutBtn) {
+            logoutBtn.classList.remove('hidden');
+            console.log('Logout button shown:', logoutBtn);
+            
+            // Re-attach logout handler after making button visible
+            setTimeout(() => {
+                attachLogoutHandler();
+            }, 100);
+        } else {
+            console.error('Logout button not found in DOM');
+        }
     } else {
+        console.log('User not authenticated, hiding logout button');
+        
         // Reset to guest state
         const guestAvatar = 'https://ui-avatars.com/api/?name=Guest&background=7c3aed&color=fff';
         userAvatar.src = guestAvatar;
@@ -1012,14 +1320,20 @@ function updateUserInterface() {
             });
             
             // Insert before logout button if it exists
-            if (logoutButton) {
-                dropdownItems.insertBefore(loginBtn, logoutButton);
+            const logoutBtn = document.getElementById('logout-button');
+            if (logoutBtn) {
+                dropdownItems.insertBefore(loginBtn, logoutBtn);
             } else {
                 dropdownItems.appendChild(loginBtn);
             }
         }
         
-        if (logoutButton) logoutButton.classList.add('hidden');
+        // Hide logout button
+        const logoutBtn = document.getElementById('logout-button');
+        if (logoutBtn) {
+            logoutBtn.classList.add('hidden');
+            console.log('Logout button hidden');
+        }
     }
 }
 
@@ -1028,6 +1342,7 @@ updateUserInterface();
 // Helper function to safely add event listeners
 function addSafeEventListener(element, eventType, handler) {
     if (element) {
+        console.log(`Adding event listener for ${eventType} to element:`, element);
         element.addEventListener(eventType, handler);
     } else {
         console.error(`Element for event ${eventType} not found`);
@@ -1049,14 +1364,23 @@ if (userInput) {
     console.error('User input element not found');
 }
 
+// Debug logout button state
+console.log('Logout button element:', logoutButton);
+console.log('Logout button classes:', logoutButton?.className);
+console.log('Logout button visible:', logoutButton && !logoutButton.classList.contains('hidden'));
+
 // Function to clear all conversation history with confirmation
 function clearAllHistory() {
     if (confirm('Are you sure you want to delete all conversation history? This action cannot be undone.')) {
+        // Ensure user is authenticated, redirect to login if not
+        const token = requireAuth();
+        if (!token) return; // requireAuth handles redirect
+        
         const userId = getUserId();
         
         if (userId) {
             // For logged in users, call API to delete conversations from database
-            fetch('/api/conversations/clear', {
+            authenticatedFetch('/api/conversations/clear', {
                 method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1097,29 +1421,126 @@ function getUserId() {
     return user ? user.id : null;
 }
 
-// Load conversations on startup
-loadConversations();
+// Initialize conversations on startup
+(async function initializeConversations() {
+    // Load conversations from server
+    await loadConversations();
+    
+    // Add initial greeting only if there are no existing conversations
+    if (conversations.length === 0) {
+        console.log('No conversations found, creating welcome conversation...');
+        
+        // Create a new conversation but prevent duplicate welcome messages
+        const newConversation = {
+            id: generateId(),
+            messages: [],
+            timestamp: new Date(),
+            preview: '',
+            topic: 'New Chat'
+        };
+        
+        conversations.unshift(newConversation);
+        currentConversationId = newConversation.id;
+        
+        // Add welcome message only once
+        const welcomeMessage = "👋 Hello! I'm your AI assistant. How can I help you today?";
+        addMessage(welcomeMessage, false);
+        newConversation.messages.push({ role: 'assistant', content: welcomeMessage });
+        newConversation.preview = welcomeMessage;
+        
+        // Save the new conversation to server
+        await saveConversations();
+        updateHistoryList();
+        clearChat();
+    } else {
+        console.log(`Loaded ${conversations.length} existing conversations`);
+        // Load the most recent conversation if available
+        if (currentConversationId && conversations.find(c => c.id === currentConversationId)) {
+            loadConversation(currentConversationId);
+        }
+    }
+})();
 
-// Add initial greeting only if there are no existing conversations
-if (conversations.length === 0) {
-    // Create a new conversation but prevent duplicate welcome messages
-    const newConversation = {
-        id: generateId(),
-        messages: [],
-        timestamp: new Date(),
-        preview: '',
-        topic: 'New Chat'
-    };
+// Update user interface to show current authentication status
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', updateUserInterface);
+} else {
+    updateUserInterface();
+}
+
+function attachLogoutHandler() {
+    const logoutButton = document.getElementById('logout-button');
+    console.log('Attaching logout handler to:', logoutButton);
     
-    conversations.unshift(newConversation);
-    currentConversationId = newConversation.id;
+    if (!logoutButton) {
+        console.error('Logout button not found when attaching handler');
+        return;
+    }
     
-    // Add welcome message only once
-    const welcomeMessage = "👋 Hello! I'm your AI assistant. How can I help you today?";
-    addMessage(welcomeMessage, false);
-    newConversation.messages.push({ role: 'assistant', content: welcomeMessage });
-    newConversation.preview = welcomeMessage;
-    saveConversations();
-    updateHistoryList();
-    clearChat();
+    // Remove any existing event listeners to prevent duplicates
+    const newLogoutButton = logoutButton.cloneNode(true);
+    logoutButton.parentNode.replaceChild(newLogoutButton, logoutButton);
+    
+    // Add event listener to the new button
+    newLogoutButton.addEventListener('click', function(event) {
+        console.log('Logout button clicked');
+        event.preventDefault();
+        event.stopPropagation();
+        
+        try {
+            // Store the original button content
+            const originalContent = newLogoutButton.innerHTML;
+            
+            // Ask for confirmation immediately
+            const confirmed = confirm('Are you sure you want to sign out?');
+            console.log('User confirmation:', confirmed);
+            
+            if (confirmed) {
+                console.log('Starting logout process...');
+                
+                // Show loading state
+                newLogoutButton.disabled = true;
+                newLogoutButton.innerHTML = '<i class="ri-loader-4-line rotating"></i> <span>Signing out...</span>';
+                
+                // Clear ALL session storage related to authentication
+                console.log('Clearing session data...');
+                sessionStorage.removeItem('authChecked');
+                sessionStorage.removeItem('isLoggedIn');
+                
+                // Clear all authentication data from localStorage
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                
+                console.log('Authentication data cleared');
+                
+                // Update UI immediately
+                updateUserInterface();
+                
+                // Close the dropdown
+                if (userDropdown) {
+                    userDropdown.classList.add('hidden');
+                    console.log('Dropdown closed');
+                }
+                
+                // Redirect immediately
+                console.log('Redirecting to account.html');
+                window.location.href = 'account.html';
+                
+            } else {
+                console.log('User cancelled logout');
+            }
+            
+        } catch (error) {
+            console.error('Error during logout:', error);
+            updateConnectionStatus('There was an error signing out. Please try again.', 'error');
+            
+            // Reset the button if there was an error
+            if (newLogoutButton) {
+                newLogoutButton.disabled = false;
+                newLogoutButton.innerHTML = '<i class="ri-logout-circle-line"></i> <span>Sign Out</span>';
+            }
+        }
+    });
+    
+    console.log('Logout handler attached successfully');
 }

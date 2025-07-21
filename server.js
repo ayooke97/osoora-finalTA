@@ -69,11 +69,23 @@ app.use(cors({
     return callback(null, true);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
+
+// Add cache control headers for development
+app.use((req, res, next) => {
+  // Prevent caching of JS/CSS files during development
+  if (req.url.endsWith('.js') || req.url.endsWith('.css')) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 app.use(express.static('.'));
 
 // Log incoming requests for debugging
@@ -85,7 +97,6 @@ app.use((req, res, next) => {
 // Middleware to verify user token (simple version for demo)
 const authenticateToken = async (req, res, next) => {
   const token = req.headers['authorization']?.split(' ')[1];
-  
   if (!token) {
     return res.status(401).json({ error: 'Unauthorized: Missing token' });
   }
@@ -122,22 +133,183 @@ const authenticateToken = async (req, res, next) => {
 // AUTH ENDPOINTS
 // =====================
 
-// Create a conversation (for test automation)
+// =====================
+// CONVERSATION ENDPOINTS
+// =====================
+
+// GET all conversations for the authenticated user
+app.get('/api/conversations', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log(`Loading conversations for user: ${userId}`);
+    
+    // Find all conversations for this user, sorted by updated_at descending
+    const conversations = await db.collection('conversations')
+      .find({ user_id: userId })
+      .sort({ updated_at: -1 })
+      .toArray();
+    
+    console.log(`Found ${conversations.length} conversations`);
+    
+    // Transform the data structure to match client expectations
+    const transformedConversations = conversations.map(conv => ({
+      id: conv.conversation_id,
+      topic: conv.topic || 'New Chat',
+      preview: conv.preview || '',
+      timestamp: conv.created_at,
+      messages: conv.messages || []
+    }));
+    
+    return res.status(200).json(transformedConversations);
+    
+  } catch (error) {
+    console.error('Error loading conversations:', error);
+    return res.status(500).json({ error: 'Failed to load conversations' });
+  }
+});
+
+// POST - Save/update conversations for the authenticated user
+app.post('/api/conversations/save', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { conversations } = req.body;
+    
+    if (!Array.isArray(conversations)) {
+      return res.status(400).json({ error: 'Conversations must be an array' });
+    }
+    
+    console.log(`Saving ${conversations.length} conversations for user: ${userId}`);
+    
+    // Clear existing conversations for this user
+    await db.collection('conversations').deleteMany({ user_id: userId });
+    
+    // Insert new conversations if any exist
+    if (conversations.length > 0) {
+      const conversationsToInsert = conversations.map(conv => ({
+        conversation_id: conv.id,
+        user_id: userId,
+        topic: conv.topic || 'New Chat',
+        preview: conv.preview || '',
+        messages: conv.messages || [],
+        created_at: conv.timestamp ? new Date(conv.timestamp) : new Date(),
+        updated_at: new Date()
+      }));
+      
+      const result = await db.collection('conversations').insertMany(conversationsToInsert);
+      console.log(`Successfully saved ${result.insertedCount} conversations`);
+    }
+    
+    return res.status(200).json({ 
+      message: 'Conversations saved successfully',
+      count: conversations.length 
+    });
+    
+  } catch (error) {
+    console.error('Error saving conversations:', error);
+    return res.status(500).json({ error: 'Failed to save conversations' });
+  }
+});
+
+// POST - Create a single conversation
 app.post('/api/conversations', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { title } = req.body;
+    const { topic, preview, messages = [] } = req.body;
+    
     const conversation = {
       conversation_id: uuidv4(),
-      title: title || 'Untitled Conversation',
       user_id: userId,
+      topic: topic || 'New Chat',
+      preview: preview || '',
+      messages: messages,
       created_at: new Date(),
-      messages: []
+      updated_at: new Date()
     };
-    await db.collection('conversations').insertOne(conversation);
-    res.status(200).json({ conversation_id: conversation.conversation_id, ...conversation });
+    
+    const result = await db.collection('conversations').insertOne(conversation);
+    console.log(`Created conversation ${conversation.conversation_id}`);
+    
+    // Update user's last active conversation
+    await db.collection('user_preferences').updateOne(
+      { user_id: userId },
+      { 
+        $set: { 
+          last_active_conversation: conversation.conversation_id,
+          updated_at: new Date() 
+        } 
+      },
+      { upsert: true }
+    );
+    
+    // Transform response to match client expectations
+    const response = {
+      id: conversation.conversation_id,
+      topic: conversation.topic,
+      preview: conversation.preview,
+      timestamp: conversation.created_at,
+      messages: conversation.messages
+    };
+    
+    return res.status(201).json(response);
+    
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create conversation', details: error.message });
+    console.error('Error creating conversation:', error);
+    return res.status(500).json({ error: 'Failed to create conversation' });
+  }
+});
+
+// DELETE - Clear all conversations for user
+app.delete('/api/conversations/clear', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const result = await db.collection('conversations').deleteMany({ user_id: userId });
+    console.log(`Deleted ${result.deletedCount} conversations for user ${userId}`);
+    
+    return res.status(200).json({ 
+      message: 'All conversations deleted successfully',
+      deletedCount: result.deletedCount 
+    });
+    
+  } catch (error) {
+    console.error('Error clearing conversations:', error);
+    return res.status(500).json({ error: 'Failed to clear conversations' });
+  }
+});
+
+// GET single conversation by ID
+app.get('/api/conversations/:conversationId', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { conversationId } = req.params;
+    
+    console.log(`Loading conversation ${conversationId} for user: ${userId}`);
+    
+    // Find the specific conversation belonging to this user
+    const conversation = await db.collection('conversations').findOne({
+      conversation_id: conversationId,
+      user_id: userId
+    });
+    
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    
+    // Transform the data structure to match client expectations
+    const transformedConversation = {
+      id: conversation.conversation_id,
+      topic: conversation.topic || 'New Chat',
+      preview: conversation.preview || '',
+      timestamp: conversation.created_at,
+      messages: conversation.messages || []
+    };
+    
+    console.log(`Found conversation: ${conversation.topic}`);
+    return res.status(200).json(transformedConversation);
+    
+  } catch (error) {
+    console.error('Error loading conversation:', error);
+    return res.status(500).json({ error: 'Failed to load conversation' });
   }
 });
 
@@ -181,18 +353,9 @@ app.post('/api/auth/register', async (req, res) => {
     // Insert user
     await db.collection('users').insertOne(newUser);
     
-    // Create default user preferences
-    const preferenceId = uuidv4();
-    const userPreferences = {
-      preference_id: preferenceId,
-      user_id: userId,
-      theme: 'system',
-      last_active_conversation: null,
-      created_at: new Date(),
-      updated_at: new Date()
-    };
-    
-    await db.collection('user_preferences').insertOne(userPreferences);
+    // Skip creating user preferences during registration to avoid MongoDB validation errors
+    // Users can create preferences later when they first change theme settings
+    console.log('User registered successfully, preferences will be created when needed');
     
     // Return success with token
     return res.status(201).json({ 
@@ -249,8 +412,32 @@ app.post('/api/auth/login', async (req, res) => {
       }
     );
     
-    // Get user preferences
-    const preferences = await db.collection('user_preferences').findOne({ user_id: user.user_id });
+    // Get or create user preferences
+    let preferences = await db.collection('user_preferences').findOne({ user_id: user.user_id });
+    
+    // If no preferences exist, create default ones
+    if (!preferences) {
+      console.log(`No preferences found for user ${user.username}, creating defaults...`);
+      
+      const defaultPreferences = {
+        preference_id: uuidv4(),
+        user_id: user.user_id,
+        theme: 'system',
+        last_active_conversation: null,
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+      
+      try {
+        const insertResult = await db.collection('user_preferences').insertOne(defaultPreferences);
+        console.log(`Default preferences created for user ${user.username}:`, insertResult.insertedId);
+        preferences = defaultPreferences;
+      } catch (prefError) {
+        console.error('Error creating default preferences:', prefError);
+        // Continue with fallback if database insert fails
+        preferences = { theme: 'system', last_active_conversation: null };
+      }
+    }
     
     // Return success with token and user data
     return res.status(200).json({ 
@@ -260,7 +447,7 @@ app.post('/api/auth/login', async (req, res) => {
         user_id: user.user_id,
         username: user.username,
         email: user.email,
-        preferences: preferences || { theme: 'system' }
+        preferences: preferences
       }
     });
     
@@ -293,37 +480,113 @@ app.get('/api/user/preferences', authenticateToken, async (req, res) => {
   }
 });
 
+// POST endpoint to create initial user preferences
+app.post('/api/user/preferences', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { theme = 'system', last_active_conversation = null } = req.body;
+    
+    // Check if preferences already exist
+    const existingPrefs = await db.collection('user_preferences').findOne({ user_id: userId });
+    if (existingPrefs) {
+      return res.status(409).json({ 
+        error: 'User preferences already exist. Use PUT to update them.' 
+      });
+    }
+    
+    // Validate theme value
+    if (!['light', 'dark', 'system'].includes(theme)) {
+      return res.status(400).json({ 
+        error: 'Invalid theme. Must be: light, dark, or system' 
+      });
+    }
+    
+    // Create new preferences document
+    const newPreferences = {
+      preference_id: uuidv4(),
+      user_id: userId,
+      theme: theme,
+      last_active_conversation: last_active_conversation,
+      created_at: new Date(),
+      updated_at: new Date()
+    };
+    
+    console.log('Creating new preferences:', newPreferences);
+    
+    const result = await db.collection('user_preferences').insertOne(newPreferences);
+    console.log('Preferences created successfully! Document ID:', result.insertedId);
+    
+    return res.status(201).json({
+      message: 'User preferences created successfully',
+      preferences: newPreferences
+    });
+    
+  } catch (error) {
+    console.error('Error creating user preferences:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET user preferences
+app.get('/api/user/preferences', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const preferences = await db.collection('user_preferences').findOne({ user_id: userId });
+    
+    if (!preferences) {
+      return res.status(404).json({ 
+        error: 'User preferences not found' 
+      });
+    }
+    
+    return res.status(200).json(preferences);
+    
+  } catch (error) {
+    console.error('Error getting user preferences:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.put('/api/user/preferences', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const { theme, last_active_conversation } = req.body;
     
-    // Update fields that are provided
-    const updateFields = {};
-    if (theme !== undefined) updateFields.theme = theme;
-    if (last_active_conversation !== undefined) updateFields.last_active_conversation = last_active_conversation;
-    updateFields.updated_at = new Date();
+    // PUT requires complete resource - validate required fields
+    if (theme === undefined) {
+      return res.status(400).json({ 
+        error: 'PUT requires complete resource. Missing required field: theme' 
+      });
+    }
     
-    // Find and update preferences
-    const result = await db.collection('user_preferences').updateOne(
+    // Validate theme value
+    if (!['light', 'dark', 'system'].includes(theme)) {
+      return res.status(400).json({ 
+        error: 'Invalid theme. Must be: light, dark, or system' 
+      });
+    }
+    
+    // Simple PUT - just update existing preferences (no upsert complexity)
+    console.log('PUT preferences update - User ID:', userId, 'Theme:', theme);
+    
+    // Try to update existing document first
+    const updateResult = await db.collection('user_preferences').updateOne(
       { user_id: userId },
-      { $set: updateFields }
+      {
+        $set: {
+          theme: theme,
+          last_active_conversation: last_active_conversation || null,
+          updated_at: new Date()
+        }
+      }
     );
     
-    if (result.matchedCount === 0) {
-      // Create preferences if they don't exist
-      const preferenceId = uuidv4();
-      const newPreferences = {
-        preference_id: preferenceId,
-        user_id: userId,
-        theme: theme || 'system',
-        last_active_conversation: last_active_conversation || null,
-        created_at: new Date(),
-        updated_at: new Date()
-      };
-      
-      await db.collection('user_preferences').insertOne(newPreferences);
-      return res.status(201).json(newPreferences);
+    // If no existing preferences found, return error
+    if (updateResult.matchedCount === 0) {
+      return res.status(404).json({ 
+        error: 'User preferences not found. Create preferences first.' 
+      });
     }
     
     // Get updated preferences
@@ -336,120 +599,7 @@ app.put('/api/user/preferences', authenticateToken, async (req, res) => {
   }
 });
 
-// =====================
-// CONVERSATION ENDPOINTS
-// =====================
-
-app.get('/api/conversations', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    
-    // Get user conversations
-    const conversations = await db.collection('conversations')
-      .find({ user_id: userId })
-      .sort({ updated_at: -1 })
-      .toArray();
-    
-    return res.status(200).json(conversations);
-    
-  } catch (error) {
-    console.error('Error getting conversations:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-
-app.post('/api/conversations', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { topic, preview } = req.body;
-    
-    // Create conversation
-    const conversationId = uuidv4();
-    const newConversation = {
-      conversation_id: conversationId,
-      user_id: userId,
-      topic: topic || 'New Conversation',
-      preview: preview || '',
-      created_at: new Date(),
-      updated_at: new Date()
-    };
-    
-    await db.collection('conversations').insertOne(newConversation);
-    
-    // Update user preferences with last active conversation
-    await db.collection('user_preferences').updateOne(
-      { user_id: userId },
-      { 
-        $set: { 
-          last_active_conversation: conversationId,
-          updated_at: new Date()
-        } 
-      },
-      { upsert: true }
-    );
-    
-    return res.status(201).json(newConversation);
-    
-  } catch (error) {
-    console.error('Error creating conversation:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.get('/api/conversations/:conversationId/messages', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { conversationId } = req.params;
-    
-    // Check if conversation belongs to user
-    const conversation = await db.collection('conversations').findOne({
-      conversation_id: conversationId,
-      user_id: userId
-    });
-    
-    if (!conversation) {
-      return res.status(403).json({ error: 'Access denied to this conversation' });
-    }
-    
-    // Get messages
-    const messages = await db.collection('messages')
-      .find({ conversation_id: conversationId })
-      .sort({ timestamp: 1 })
-      .toArray();
-    
-    return res.status(200).json(messages);
-    
-  } catch (error) {
-    console.error('Error getting messages:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.delete('/api/conversations/clear', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    
-    console.log(`Deleting all conversations for user: ${userId}`);
-    
-    // Delete all conversations that belong to this user
-    const deleteResult = await db.collection('conversations').deleteMany({
-      user_id: userId
-    });
-    
-    console.log('Delete result:', deleteResult);
-    
-    // Return the result including how many conversations were deleted
-    return res.status(200).json({
-      message: 'All conversations deleted successfully',
-      deletedCount: deleteResult.deletedCount
-    });
-    
-  } catch (error) {
-    console.error('Error deleting conversations:', error);
-    return res.status(500).json({ error: 'Failed to delete conversations' });
-  }
-});
+// Duplicate conversation endpoints removed - using the more comprehensive version above
 
 app.post('/api/conversations/:conversationId/messages', authenticateToken, async (req, res) => {
   try {
