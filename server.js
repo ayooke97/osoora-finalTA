@@ -747,7 +747,7 @@ app.post('/api/chat', async (req, res) => {
             throw new Error('Missing Dashscope API key');
         }
         
-        // console.log('Making request to Dashscope API at:', dashscopeUrl);
+        console.log('Making request to Dashscope API at:', dashscopeUrl);
 
         // Format the prompt to request Markdown responses
         const formattedPrompt = `Please format your response using Markdown with proper headings, lists, code blocks, and other formatting where appropriate. Here's the user's message:\n\n${message}`;
@@ -760,6 +760,21 @@ app.post('/api/chat', async (req, res) => {
         });
 
         let existingSessionId = null;
+        let history = [];
+        if (conversationId) {
+            const conversation = await db.collection('conversations').findOne({ conversation_id: conversationId });
+            if (conversation && conversation.messages) {
+                history = conversation.messages.map(msg => ({
+                    role: msg.role,
+                    content: msg.content
+                }));
+            }
+        }
+        // Add current message to history
+        history.push({
+            role: 'user',
+            content: formattedPrompt
+        });
         
         // Check if we already have a session_id for this conversation
         if (conversationId) {
@@ -781,12 +796,10 @@ app.post('/api/chat', async (req, res) => {
             url: dashscopeUrl,
             data: {
                 input: {
-                    prompt: formattedPrompt,
-                    // Include session_id directly if this is an ongoing conversation
+                    messages: history,
                     ...(existingSessionId && { session_id: existingSessionId })
                 },
                 parameters: {},
-                // If we have an existing session_id, use it. Otherwise, use conversationId as fallback
                 debug: existingSessionId ? { session_id: existingSessionId } : 
                        conversationId ? { session_id: conversationId } : {}
             },
@@ -882,77 +895,18 @@ app.post('/api/chat', async (req, res) => {
                                     });
                                     
                                     // Store the session ID in MongoDB if we have a conversationId and sessionId
-                                    if (conversationId && sessionId) {
-                                        (async () => {
-                                            try {
-                                                // First check if the conversation exists
-                                                console.log(`Checking if conversation ${conversationId} exists in MongoDB...`);
-                                                const conversation = await db.collection('conversations').findOne({ conversation_id: conversationId });
-                                                console.log('Conversation found:', Boolean(conversation));
-                                                
-                                                // If conversation doesn't exist, create it first
-                                                if (!conversation) {
-                                                    console.log(`Conversation with ID ${conversationId} doesn't exist in MongoDB. Creating it first...`);
-                                                    const userId = req.headers['user-id'] || 'anonymous';
-                                                    
-                                                    // Use only the fields that the MongoDB schema expects using snake_case consistently
-                                                    const newConversation = {
-                                                        conversation_id: conversationId,
-                                                        user_id: userId,
-                                                        title: 'Chat session',
-                                                        created_at: new Date(),
-                                                        updated_at: new Date(),
-                                                        messages: [],
-                                                        message: 'Chat session started', // Required field based on schema
-                                                        dashscope_session_id: null // Will be updated later
-                                                    };
-                                                    
-                                                    await db.collection('conversations').insertOne(newConversation);
-                                                    console.log(`Created new conversation with ID: ${conversationId}`);
-                                                }
-                                                
-                                                // Debug information about message and lastProcessedText
-                                                console.log('DEBUG - Before MongoDB update:');
-                                                console.log('  message type:', typeof message);
-                                                console.log('  message value:', message);
-                                                console.log('  lastProcessedText type:', typeof lastProcessedText);
-                                                console.log('  lastProcessedText value:', lastProcessedText);
-                                                
-                                                // Now update with session ID and message content - using snake_case field names consistently
-                                                const updateResult = await db.collection('conversations').updateOne(
-                                                  { conversation_id: conversationId },
-                                                  { 
-                                                      $set: { 
-                                                          dashscope_session_id: sessionId, 
-                                                          updated_at: new Date()
-                                                      },
-                                                      $push: {
-                                                          messages: {
-                                                              $each: [
-                                                                  {
-                                                                      role: 'user',
-                                                                      content: typeof message === 'object' ? JSON.stringify(message) : message,
-                                                                      timestamp: new Date()
-                                                                  },
-                                                                  {
-                                                                      role: 'assistant',
-                                                                      content: typeof lastProcessedText === 'object' ? JSON.stringify(lastProcessedText) : lastProcessedText,
-                                                                      timestamp: new Date()
-                                                                  }
-                                                              ]
-                                                          }
-                                                      }
-                                                  }
-                                              );
-                                        } catch (dbError) {
-                                            console.error('Error updating conversation with session ID:', dbError);
-                                        }
-                                    })();
-                                }
-
-                                    // Store the message in MongoDB
-                                    
-
+                                     if (conversationId && sessionId && !existingSessionId) {
+                                         (async () => {
+                                             try {
+                                                 await db.collection('conversations').updateOne(
+                                                     { conversation_id: conversationId },
+                                                     { $set: { dashscope_session_id: sessionId } }
+                                                 );
+                                             } catch (dbError) {
+                                                 console.error('Error updating session ID:', dbError);
+                                             }
+                                         })();
+                                     }
                                 } catch (e) {
                                     console.error('Error parsing JSON:', e);
                                 }
@@ -966,60 +920,31 @@ app.post('/api/chat', async (req, res) => {
             });
             
             response.data.on('end', async () => {
-    res.write('data: [DONE]\n\n');
-    res.end();
+                res.write('data: [DONE]\n\n');
+                res.end();
 
-    // After streaming is complete, store the user prompt and assistant reply in MongoDB
-    try {
-        if (conversationId && lastProcessedText) {
-            // Find the conversation, create if not exists
-            let conversation = await db.collection('conversations').findOne({ conversation_id: conversationId });
-            if (!conversation) {
-                const userId = req.headers['user-id'] || 'anonymous';
-                const newConversation = {
-                    conversation_id: conversationId,
-                    user_id: userId,
-                    title: 'Chat session',
-                    created_at: new Date(),
-                    updated_at: new Date(),
-                    messages: [],
-                    message: 'Chat session started',
-                    dashscope_session_id: null
-                };
-                await db.collection('conversations').insertOne(newConversation);
-            }
-            // Push the user and assistant messages as a pair
-            await db.collection('conversations').updateOne(
-                { conversation_id: conversationId },
-                {
-                    $push: {
-                        messages: {
-                            $each: [
-                                {
-                                    role: 'user',
-                                    content: typeof message === 'object' ? JSON.stringify(message) : message,
-                                    timestamp: new Date()
+                // Save the full user message and assistant response
+                try {
+                    if (conversationId && lastProcessedText) {
+                        await db.collection('conversations').updateOne(
+                            { conversation_id: conversationId },
+                            {
+                                $push: {
+                                    messages: {
+                                        $each: [
+                                            { role: 'user', content: message, timestamp: new Date() },
+                                            { role: 'assistant', content: lastProcessedText, timestamp: new Date() }
+                                        ]
+                                    }
                                 },
-                                {
-                                    role: 'assistant',
-                                    content: typeof lastProcessedText === 'object' ? JSON.stringify(lastProcessedText) : lastProcessedText,
-                                    timestamp: new Date()
-                                }
-                            ]
-                        }
-                    },
-                    $set: {
-                        updated_at: new Date(),
-                        dashscope_session_id: existingSessionId || null
+                                $set: { updated_at: new Date() }
+                            }
+                        );
                     }
+                } catch (dbError) {
+                    console.error('Error saving messages:', dbError);
                 }
-            );
-        }
-    } catch (dbError) {
-        console.error('Error saving messages after SSE end:', dbError);
-    }
-});
-
+            });
         response.data.on('error', (error) => {
             console.error('Stream Error:', error);
             res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
